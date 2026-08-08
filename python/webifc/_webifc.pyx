@@ -197,6 +197,11 @@ cdef class Model:
         return self._model_id
 
     @property
+    def session(self):
+        """The ModelSession that owns this model."""
+        return self._session
+
+    @property
     def schema(self):
         with self._session._lock:
             self._check()
@@ -347,7 +352,11 @@ cdef class Model:
                     arguments.append(self._read_value(loader, t))
                 else:
                     arguments.append({"type": t, "value": self._read_value(loader, t)})
-            # TOKEN_UNKNOWN and anything else: skip, like upstream
+            elif t == TOKEN_UNKNOWN:
+                # '*' (derived attribute): a placeholder keeps argument indices
+                # aligned — the wasm layer skips these, silently shifting every
+                # later argument (deliberate divergence)
+                arguments.append(None)
         if len(arguments) == 0 and not in_list:
             return None
         if len(arguments) == 1 and in_object:
@@ -433,6 +442,70 @@ cdef class Model:
                 yield mesh, geoms
                 if clear_per_element:
                     self.clear_geometry()
+
+    # ---- relationships ----------------------------------------------------
+
+    cdef object _read_arg_refs(self, IfcLoader *loader, uint32_t express_id, uint32_t arg):
+        """Express IDs referenced by one argument: int for a single REF, list
+        for a set (nested sets flattened, inline typed wrappers like
+        IFCPROPERTYSETDEFINITIONSET((#1,#2)) unwrapped), None for EMPTY/other."""
+        loader.MoveToArgumentOffset(express_id, arg)
+        cdef char t = loader.GetTokenType()
+        cdef int depth
+        cdef list out
+        if t == TOKEN_REF:
+            loader.StepBack()
+            return loader.GetRefArgument()
+        if t == TOKEN_LABEL:
+            # inline typed value: consume the name, fall through to its set
+            loader.StepBack()
+            GetStringArgumentCopy(loader[0])
+            t = loader.GetTokenType()
+        if t == TOKEN_SET_BEGIN:
+            out = []
+            depth = 1
+            while depth > 0:
+                t = loader.GetTokenType()
+                if t == TOKEN_SET_BEGIN:
+                    depth += 1
+                elif t == TOKEN_SET_END:
+                    depth -= 1
+                elif t == TOKEN_LINE_END:
+                    break  # malformed line: never walk into the next one
+                elif t == TOKEN_REF:
+                    loader.StepBack()
+                    out.append(loader.GetRefArgument())
+                elif t in (TOKEN_STRING, TOKEN_ENUM, TOKEN_REAL, TOKEN_INTEGER, TOKEN_LABEL):
+                    # skip payload without p21-decoding (decoding can throw)
+                    loader.StepBack()
+                    GetStringArgumentCopy(loader[0])
+            return out
+        return None
+
+    def scan_relationship(self, rel_type, uint32_t arg_a=4, uint32_t arg_b=5):
+        """Fast tape scan over every instance of an IfcRel* type.
+
+        Returns [(rel_id, refs_at_arg_a, refs_at_arg_b), ...] where each refs
+        value is an int (single REF), a list of ints (a set), or None. The
+        default arguments 4/5 are the first two attributes after the shared
+        (GlobalId, OwnerHistory, Name, Description) prefix of every IfcRoot.
+        """
+        cdef uint32_t code = self._type_code(rel_type)
+        if isinstance(rel_type, str) and self._session._session.TypeCodeToName(code).decode("ascii").upper() != rel_type.upper():
+            raise WebIfcError(f"unknown IFC type name: {rel_type}")
+        cdef IfcLoader *loader
+        cdef vector[uint32_t] ids
+        cdef list out = []
+        cdef size_t i
+        with self._session._lock:
+            self._check()
+            loader = self._session._session.Loader(self._model_id)
+            ids = loader.GetExpressIDsWithType(code)
+            for i in range(ids.size()):
+                out.append((ids[i],
+                            self._read_arg_refs(loader, ids[i], arg_a),
+                            self._read_arg_refs(loader, ids[i], arg_b)))
+        return out
 
     # ---- helpers ----------------------------------------------------------
 

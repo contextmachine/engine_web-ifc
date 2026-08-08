@@ -16,6 +16,7 @@ IfcSpace and IfcOpeningElement stream like every other element. Files are
 parsed natively from disk with bounded memory, with no 2GiB/4GiB limits.
 """
 
+from . import bim
 from ._webifc import (
     ModelSession,
     Model,
@@ -37,6 +38,7 @@ from ._webifc import (
 )
 
 __all__ = [
+    "bim",
     "ModelSession",
     "Model",
     "FlatMesh",
