@@ -232,3 +232,47 @@ def test_ifc4x3_smoke():
         assert index
         some = next(iter(index))
         assert bim.properties(m, some, index=index) is not None
+
+
+def test_relationship_catch_all_is_complete(fzk_model):
+    """Every IfcRel type present in the model is either semantically handled
+    or dumped by relationships(exclude_handled=True) — nothing can vanish."""
+    present = {t.upper() for t in bim.present_rel_types(fzk_model)}
+    other = {t.upper() for t in bim.relationships(fzk_model, exclude_handled=True)}
+    assert present == (present & bim.HANDLED_REL_TYPES) | other
+    # FZK is fully covered by the semantic helpers
+    assert other == set()
+    # and the raw dump agrees with the pinned instance counts
+    dump = bim.relationships(fzk_model, types=["IFCRELVOIDSELEMENT"])
+    assert len(dump["IfcRelVoidsElement"]) == 17
+
+
+def test_unhandled_relationship_survives_in_extract(tmp_path):
+    """A rel type with no semantic helper lands in other_relationships."""
+    body = (
+        "#1=IFCPROJECT('3MD_HkJ6X2EwpfIbCFm0g_',$,'P',$,$,$,$,$,$);\n"
+        "#2=IFCWALL('3MD_HkJ6X2EwpfIbCFm0g1',$,'W',$,$,$,$,$,$);\n"
+        "#3=IFCBUILDING('3MD_HkJ6X2EwpfIbCFm0g2',$,'B',$,$,$,$,$,$,$,$,$);\n"
+        "#4=IFCRELASSIGNSTOPRODUCT('3MD_HkJ6X2EwpfIbCFm0g3',$,$,$,(#2),$,#3);\n"
+    )
+    with webifc.open(_write_model(tmp_path, body)) as m:
+        data = bim.extract(m)
+        other = data["other_relationships"]
+        assert "IfcRelAssignsToProduct" in other
+        assert other["IfcRelAssignsToProduct"][0]["ID"] == 4
+
+
+def test_systems_and_ports_advanced_model():
+    """MEP model: group assignments and port connections (pinned via grep:
+    240 IfcRelAssignsToGroup, 3640 port-port, 7638 port-element)."""
+    with webifc.open(fixture_path("advanced_model.ifc")) as m:
+        sys_map = bim.systems(m)
+        assert sys_map
+        assert sum(len(s["members"]) for s in sys_map.values()) >= 240
+        conns = bim.connections(m)
+        by_type = {}
+        for c in conns:
+            by_type[c["type"]] = by_type.get(c["type"], 0) + 1
+        assert by_type["IfcRelConnectsPorts"] == 3640
+        assert by_type["IfcRelConnectsPortToElement"] == 7638
+        assert by_type["IfcRelServicesBuildings"] == 240

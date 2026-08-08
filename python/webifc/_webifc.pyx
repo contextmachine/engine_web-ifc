@@ -73,6 +73,7 @@ cdef extern from "IfcLoader.h" namespace "webifc::parsing":
         uint32_t GetNoLineArguments(uint32_t expressID) except +
         void StepBack() except +
         vector[uint32_t] GetAllLines() except +
+        vector[uint32_t] GetAllTypes() except +
         uint32_t GetNextExpressID(uint32_t expressId) except +
 
 
@@ -442,6 +443,14 @@ cdef class Model:
                 yield mesh, geoms
                 if clear_per_element:
                     self.clear_geometry()
+
+    def present_types(self):
+        """Type codes of every entity type instantiated in this model."""
+        cdef vector[uint32_t] types
+        with self._session._lock:
+            self._check()
+            types = self._session._session.Loader(self._model_id).GetAllTypes()
+        return sorted(types[i] for i in range(types.size()))
 
     # ---- relationships ----------------------------------------------------
 

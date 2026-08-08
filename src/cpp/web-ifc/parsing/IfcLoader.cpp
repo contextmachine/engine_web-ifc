@@ -768,6 +768,13 @@ namespace webifc::parsing {
       return expressIDs;
     }
 
+    std::vector<uint32_t> IfcLoader::GetAllTypes() const {
+      std::vector<uint32_t> types;
+      types.reserve(_ifcTypeToExpressID.size());
+      for (const auto &kv : _ifcTypeToExpressID) types.push_back(kv.first);
+      return types;
+    }
+
     uint32_t IfcLoader::GetNextExpressID(uint32_t expressId) const {
       uint32_t currentId = expressId+1;
       while(!_lines.contains(currentId)) currentId++;

@@ -51,6 +51,7 @@ namespace webifc::parsing
       IfcTokenType GetTokenType(const uint64_t tapeOffset) const;
       const std::vector<uint64_t> GetSetArgument() const;
       std::vector<uint32_t> GetAllLines() const;
+      std::vector<uint32_t> GetAllTypes() const;
       const std::vector<std::vector<uint64_t>> GetSetListArgument() const;
       void MoveToArgumentOffset(const uint32_t expressID, const uint32_t argumentIndex) const;
       uint32_t GetNoLineArguments(uint32_t expressID) const;

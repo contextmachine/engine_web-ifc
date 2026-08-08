@@ -26,6 +26,7 @@ from ._webifc import LABEL, WebIfcError
 _CONNECTION_SPECS = [
     ("IFCRELVOIDSELEMENT", 4, 5),                    # host element -> opening
     ("IFCRELFILLSELEMENT", 4, 5),                    # opening -> filling element
+    ("IFCRELPROJECTSELEMENT", 4, 5),                 # host element -> projection
     ("IFCRELCONNECTSELEMENTS", 5, 6),
     ("IFCRELCONNECTSPATHELEMENTS", 5, 6),
     ("IFCRELCONNECTSWITHREALIZINGELEMENTS", 5, 6),
@@ -604,6 +605,63 @@ def systems(model):
     return out
 
 
+# ---- catch-all --------------------------------------------------------------
+
+# Every IfcRel* type a semantic helper consumes; relationships() and
+# extract()["other_relationships"] cover the rest, so nothing in the
+# relationship layer can be silently missed.
+HANDLED_REL_TYPES = frozenset(
+    [t for t, _a, _b in _CONNECTION_SPECS]
+    + _SPACE_BOUNDARY_TYPES
+    + _GROUP_ASSIGNMENT_TYPES
+    + [
+        "IFCRELDEFINESBYPROPERTIES",
+        "IFCRELDEFINESBYTYPE",
+        "IFCRELASSOCIATESMATERIAL",
+        "IFCRELASSOCIATESCLASSIFICATION",
+        "IFCRELAGGREGATES",
+        "IFCRELNESTS",
+        "IFCRELCONTAINEDINSPATIALSTRUCTURE",
+    ]
+)
+
+
+def present_rel_types(model):
+    """Names of every IfcRel* type instantiated in this model."""
+    session = model.session
+    out = []
+    for code in model.present_types():
+        name = session.type_name(code)
+        if name.upper().startswith("IFCREL"):
+            out.append(name)
+    return sorted(out)
+
+
+def relationships(model, types=None, exclude_handled=False):
+    """Raw dump of relationship instances: {type_name: [get_line dicts]}.
+
+    The guaranteed-complete fallback for IfcRel* types without a semantic
+    helper (structural connects, document associations, IfcRelDeclares,
+    IFC4X3 positions...). types narrows to specific names; exclude_handled
+    drops everything a semantic helper already covers.
+    """
+    wanted = None if types is None else {t.upper() for t in types}
+    out = {}
+    for name in present_rel_types(model):
+        upper = name.upper()
+        if wanted is not None and upper not in wanted:
+            continue
+        if exclude_handled and upper in HANDLED_REL_TYPES:
+            continue
+        lines = []
+        for eid in model.ids_of_type(upper):
+            line = _safe_line(model, int(eid))
+            if line is not None:
+                lines.append(line)
+        out[name] = lines
+    return out
+
+
 # ---- one-shot dump ----------------------------------------------------------
 
 
@@ -715,4 +773,6 @@ def extract(model, include_type_psets=True, include_materials=True):
         "elements": elements,
         "connections": connections(model),
         "systems": systems(model),
+        # raw instances of any relationship type no helper above consumed
+        "other_relationships": relationships(model, exclude_handled=True),
     }
