@@ -249,12 +249,25 @@ namespace webifc::cache
         _loader.MoveToArgumentOffset(unitRef, 3);
         auto unitRefLine = _loader.GetRefArgument();
 
-        _loader.MoveToArgumentOffset(unitRefLine, 1);
+        // IfcMeasureWithUnit: ValueComponent (an inline typed value like
+        // IFCRATIOMEASURE(0.0174..)) is argument 0, UnitComponent is
+        // argument 1. The old walk relied on ArgumentOffset miscounting the
+        // inline value's set as its own argument; indices are correct now.
+        _loader.MoveToArgumentOffset(unitRefLine, 0);
+        if (_loader.GetTokenType() == parsing::IfcTokenType::LABEL)
+        {
+          _loader.StepBack();
+          _loader.GetStringArgument(); // consume the measure type name
+        }
+        else
+        {
+          _loader.StepBack();
+        }
         auto ratios = _loader.GetSetArgument();
 
         /// Scale Correction
 
-        _loader.MoveToArgumentOffset(unitRefLine, 2);
+        _loader.MoveToArgumentOffset(unitRefLine, 1);
         auto scaleRefLine = _loader.GetRefArgument();
 
         _loader.MoveToArgumentOffset(scaleRefLine, 1);

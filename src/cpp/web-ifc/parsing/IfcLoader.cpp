@@ -652,12 +652,30 @@ namespace webifc::parsing {
    			break;
    		case IfcTokenType::STRING:
    		case IfcTokenType::ENUM:
-   		case IfcTokenType::LABEL:
       case IfcTokenType::INTEGER:
       case IfcTokenType::REAL:
    		{
    			uint32_t length = _tokenStream->Read<uint32_t>();
    			_tokenStream->Forward(length);
+   			break;
+   		}
+   		case IfcTokenType::LABEL:
+   		{
+   			uint32_t length = _tokenStream->Read<uint32_t>();
+   			_tokenStream->Forward(length);
+   			// Inside the argument list a LABEL is an inline typed value
+   			// (IFCBOOLEAN(.T.), IFCLENGTHMEASURE(2.4), ...) and counts as ONE
+   			// argument with its value set, matching GetNoLineArguments. At
+   			// depth 0 it is the entity type name: skip only the payload.
+   			if (setDepth >= 1)
+   			{
+   				if (GetTokenType() == IfcTokenType::SET_BEGIN)
+   				{
+   					StepBack();
+   					GetSetArgument();
+   				}
+   				else StepBack();
+   			}
    			break;
    		}
    		case IfcTokenType::REF:
